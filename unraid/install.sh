@@ -135,6 +135,37 @@ if (( ${#missing[@]} > 0 )); then
     exit 1
 fi
 
+# Launch the daemon now via Unraid's native backgroundScript.sh, which hands
+# off to startBackground.php through `at NOW` — the same path the Web UI
+# "Run Script" button takes. This keeps logs / UI status in sync.
+# Skip with START_NOW=0 ./unraid/install.sh <domain>
+UNRAID_BG="/usr/local/emhttp/plugins/user.scripts/backgroundScript.sh"
+LOG_FILE="/tmp/user.scripts/tmpScripts/virtio-mem-balancer-$DOMAIN/log.txt"
+run_status="not started (START_NOW=0)"
+
+if [[ "${START_NOW:-1}" == "1" ]]; then
+    if pgrep -f "virtio-mem-balancer-$DOMAIN/balancer.sh" >/dev/null 2>&1; then
+        run_status="already running (PID $(pgrep -f "virtio-mem-balancer-$DOMAIN/balancer.sh" | head -1))"
+    elif [[ -f "$UNRAID_BG" ]]; then
+        bash "$UNRAID_BG" "$WRAPPER_PATH" >/dev/null 2>&1
+        sleep 2
+        if pgrep -f "virtio-mem-balancer-$DOMAIN/balancer.sh" >/dev/null 2>&1; then
+            run_status="launched via User Scripts backgroundScript.sh (PID $(pgrep -f "virtio-mem-balancer-$DOMAIN/balancer.sh" | head -1))"
+        else
+            run_status="backgroundScript.sh returned but daemon not detected — check $LOG_FILE and: atq; systemctl status atd"
+        fi
+    else
+        mkdir -p "$(dirname "$LOG_FILE")"
+        nohup bash "$WRAPPER_PATH" >>"$LOG_FILE" 2>&1 </dev/null & disown
+        sleep 1
+        if pgrep -f "virtio-mem-balancer-$DOMAIN/balancer.sh" >/dev/null 2>&1; then
+            run_status="launched via nohup fallback (PID $(pgrep -f "virtio-mem-balancer-$DOMAIN/balancer.sh" | head -1))"
+        else
+            run_status="FAILED to start — check $LOG_FILE"
+        fi
+    fi
+fi
+
 cat <<EOF
 
 Installed at: $TARGET_DIR
@@ -144,12 +175,15 @@ Installed at: $TARGET_DIR
   balancer.sh     $(stat -c '%A %s bytes' "$TARGET_DIR/balancer.sh")
   balancer.conf   $(stat -c '%A %s bytes' "$TARGET_DIR/balancer.conf")
 
-Next steps:
-  1. In Unraid web UI: Settings -> User Scripts
-  2. Find "virtio-mem balancer ($DOMAIN)" — its schedule is already set to
-     "At First Array Start Only"
-  3. Click "Run Script" once now to launch the daemon immediately
-     (it self-loops — one invocation per boot is enough)
+Daemon: $run_status
+Log:    $LOG_FILE
+
+Installation is complete. The daemon is running (see "Daemon:" above) and
+is scheduled to auto-start at next array start.
+
+To stop it: pkill -f "virtio-mem-balancer-$DOMAIN/balancer.sh"
+To watch:   tail -F $LOG_FILE
+To reconf:  \$EDITOR $CONFIG_PATH  (then pkill + re-run this installer)
 
 Edit $CONFIG_PATH any time; kill and relaunch to apply:
   pkill -f "virtio-mem-balancer-$DOMAIN/balancer.sh"
