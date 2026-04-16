@@ -1,0 +1,26 @@
+# virtio-mem-balancer config
+# Copy to /etc/virtio-mem-balancer/<domain>.conf or pass via CONFIG=<path>.
+# All values are optional except DOMAIN (which you can also set via env).
+
+# Libvirt domain name (required)
+DOMAIN="my-guest"
+
+# Pluggable ceiling in KiB. Must be <= the virtio-mem <size> in the VM XML.
+# 6291456 = 6 GiB
+MAX_KIB=6291456
+
+# Step per tick in KiB. Bigger = faster reaction, coarser granularity.
+# 524288 = 512 MiB ; 1048576 = 1 GiB ; 2097152 = 2 GiB
+STEP_KIB=524288
+
+# Grow when guest unused/available drops below LOW_PCT.
+LOW_PCT=15
+
+# Shrink when guest unused/available rises above HIGH_PCT.
+HIGH_PCT=40
+
+# Seconds between ticks. Lower = faster reaction, more virsh calls.
+INTERVAL=15
+
+# NUMA node of the virtio-mem device (matches <node> in VM XML).
+NODE=0
