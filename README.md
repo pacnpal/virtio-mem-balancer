@@ -119,7 +119,8 @@ On the Unraid host:
 ```bash
 cd /boot && git clone https://github.com/pacnpal/virtio-mem-balancer.git
 cd virtio-mem-balancer
-./unraid/install.sh my-guest         # replace with your VM's libvirt domain name
+# /boot is FAT32 — can't store +x, so invoke via bash explicitly:
+bash ./unraid/install.sh my-guest    # replace with your VM's libvirt domain name
 ```
 
 The installer creates a dedicated User Scripts entry at
@@ -141,7 +142,7 @@ Log tails to `/tmp/user.scripts/tmpScripts/virtio-mem-balancer-my-guest/log.txt`
 For multiple guests, run the installer once per domain; each gets its own
 User Scripts entry and lockfile.
 
-**Updating later:** `cd /boot/virtio-mem-balancer && git pull && ./unraid/install.sh my-guest`
+**Updating later:** `cd /boot/virtio-mem-balancer && git pull && bash ./unraid/install.sh my-guest`
 refreshes `balancer.sh` without touching your `balancer.conf`.
 
 ## Config
