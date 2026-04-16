@@ -98,6 +98,30 @@ Config: $CONFIG_PATH
 Log (tmpfs): /tmp/user.scripts/tmpScripts/virtio-mem-balancer-$DOMAIN/log.txt
 EOF
 
+# Register the script in User Scripts' schedule.json with frequency "boot"
+# ("At First Array Start Only"), so users don't have to set it in the UI.
+SCHEDULE_JSON="/boot/config/plugins/user.scripts/schedule.json"
+SCHEDULE_KEY="$WRAPPER_PATH"
+SCHEDULE_ID="schedule$(basename "$TARGET_DIR")"
+
+if command -v jq >/dev/null 2>&1; then
+    mkdir -p "$(dirname "$SCHEDULE_JSON")"
+    tmp=$(mktemp)
+    if [[ -f "$SCHEDULE_JSON" ]] && jq -e . "$SCHEDULE_JSON" >/dev/null 2>&1; then
+        jq --arg key  "$SCHEDULE_KEY" \
+           --arg id   "$SCHEDULE_ID" \
+           '.[$key] = {script: $key, frequency: "boot", id: $id, custom: ""}' \
+           "$SCHEDULE_JSON" > "$tmp" && mv "$tmp" "$SCHEDULE_JSON"
+    else
+        jq -n --arg key "$SCHEDULE_KEY" --arg id "$SCHEDULE_ID" \
+           '{($key): {script: $key, frequency: "boot", id: $id, custom: ""}}' \
+           > "$SCHEDULE_JSON"
+    fi
+    echo "Schedule set to 'boot' (At First Array Start Only) in $SCHEDULE_JSON"
+else
+    echo "NOTE: jq not found — set the schedule manually via Settings -> User Scripts"
+fi
+
 # Verify all four files User Scripts expects are present and non-empty.
 missing=()
 for f in script name description balancer.sh balancer.conf; do
@@ -122,9 +146,9 @@ Installed at: $TARGET_DIR
 
 Next steps:
   1. In Unraid web UI: Settings -> User Scripts
-  2. Find "virtio-mem balancer ($DOMAIN)"
-  3. Set its schedule to "At First Array Start Only" and click Apply
-  4. Click "Run Script" once now to launch the daemon immediately
+  2. Find "virtio-mem balancer ($DOMAIN)" — its schedule is already set to
+     "At First Array Start Only"
+  3. Click "Run Script" once now to launch the daemon immediately
      (it self-loops — one invocation per boot is enough)
 
 Edit $CONFIG_PATH any time; kill and relaunch to apply:

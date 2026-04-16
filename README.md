@@ -131,10 +131,10 @@ containing:
 - `script` — the User Scripts entry point, which points at the two above
 - `name`, `description` — shown in the User Scripts UI
 
-Then in the Unraid web UI: **Settings → User Scripts → virtio-mem balancer
-(my-guest)**, set the schedule to **"At First Array Start Only"**, and click
-**Apply**. To start immediately without waiting for an array restart, click
-**"Run Script"** once.
+The installer also registers the script in `schedule.json` with frequency
+`boot` (UI label: **"At First Array Start Only"**). To start immediately
+without waiting for an array restart, go to **Settings → User Scripts →
+virtio-mem balancer (my-guest)** and click **"Run Script"** once.
 
 Log tails to `/tmp/user.scripts/tmpScripts/virtio-mem-balancer-my-guest/log.txt`
 (tmpfs — wiped on Unraid reboot).
