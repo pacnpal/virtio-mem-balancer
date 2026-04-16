@@ -135,31 +135,24 @@ if (( ${#missing[@]} > 0 )); then
     exit 1
 fi
 
-# Launch the daemon now via Unraid's native backgroundScript.sh, which hands
-# off to startBackground.php through `at NOW` — the same path the Web UI
-# "Run Script" button takes. This keeps logs / UI status in sync.
-# Skip with START_NOW=0 ./unraid/install.sh <domain>
-UNRAID_BG="/usr/local/emhttp/plugins/user.scripts/backgroundScript.sh"
+# Launch the daemon now. Uses setsid + nohup so the child survives this
+# installer exiting, with stdout/stderr following the path User Scripts
+# itself writes to (so "View Log" in the UI still works if you click it).
+# Skip with START_NOW=0 bash ./unraid/install.sh <domain>
 LOG_FILE="/tmp/user.scripts/tmpScripts/virtio-mem-balancer-$DOMAIN/log.txt"
 run_status="not started (START_NOW=0)"
 
 if [[ "${START_NOW:-1}" == "1" ]]; then
     if pgrep -f "virtio-mem-balancer-$DOMAIN/balancer.sh" >/dev/null 2>&1; then
         run_status="already running (PID $(pgrep -f "virtio-mem-balancer-$DOMAIN/balancer.sh" | head -1))"
-    elif [[ -f "$UNRAID_BG" ]]; then
-        bash "$UNRAID_BG" "$WRAPPER_PATH" >/dev/null 2>&1
-        sleep 2
-        if pgrep -f "virtio-mem-balancer-$DOMAIN/balancer.sh" >/dev/null 2>&1; then
-            run_status="launched via User Scripts backgroundScript.sh (PID $(pgrep -f "virtio-mem-balancer-$DOMAIN/balancer.sh" | head -1))"
-        else
-            run_status="backgroundScript.sh returned but daemon not detected — check $LOG_FILE and: atq; systemctl status atd"
-        fi
     else
         mkdir -p "$(dirname "$LOG_FILE")"
-        nohup bash "$WRAPPER_PATH" >>"$LOG_FILE" 2>&1 </dev/null & disown
-        sleep 1
-        if pgrep -f "virtio-mem-balancer-$DOMAIN/balancer.sh" >/dev/null 2>&1; then
-            run_status="launched via nohup fallback (PID $(pgrep -f "virtio-mem-balancer-$DOMAIN/balancer.sh" | head -1))"
+        echo "Script Starting $(date '+%b %d, %Y %H:%M.%S') (by installer)" >>"$LOG_FILE"
+        setsid nohup bash "$WRAPPER_PATH" >>"$LOG_FILE" 2>&1 </dev/null &
+        disown
+        sleep 2
+        if pid=$(pgrep -f "virtio-mem-balancer-$DOMAIN/balancer.sh" | head -1); [[ -n "$pid" ]]; then
+            run_status="running (PID $pid)"
         else
             run_status="FAILED to start — check $LOG_FILE"
         fi

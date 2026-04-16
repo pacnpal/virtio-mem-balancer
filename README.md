@@ -134,10 +134,10 @@ containing:
 The installer also:
 - Registers the script in `schedule.json` with frequency `boot` (UI label:
   **"At First Array Start Only"**), so no clicking through the UI.
-- Launches the daemon immediately via Unraid's native
-  `/usr/local/emhttp/plugins/user.scripts/backgroundScript.sh`, the same
-  path the web UI's **"Run Script"** button takes. Skip with
-  `START_NOW=0 bash ./unraid/install.sh my-guest`.
+- Launches the daemon immediately via `setsid nohup`, logging to the same
+  path the User Scripts UI expects
+  (`/tmp/user.scripts/tmpScripts/virtio-mem-balancer-<domain>/log.txt`).
+  Skip with `START_NOW=0 bash ./unraid/install.sh my-guest`.
 
 Log tails to `/tmp/user.scripts/tmpScripts/virtio-mem-balancer-my-guest/log.txt`
 (tmpfs — wiped on Unraid reboot).
