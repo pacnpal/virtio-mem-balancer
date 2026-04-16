@@ -110,11 +110,13 @@ cleanup() {
 }
 trap cleanup TERM INT HUP
 
-# ---------- initialize req from live XML ----------
+# ---------- helpers ----------
+# Parse <requested> from the first <memory model='virtio-mem'> block in dumpxml.
+# Prints value in KiB, or empty on failure.
 read_live_req() {
-    local xml
+    local xml val
     xml=$(virsh dumpxml "$DOMAIN" 2>/dev/null) || return 1
-    awk '
+    val=$(awk '
         /<memory model=.virtio-mem./ { in_vm = 1; next }
         in_vm && /<\/memory>/        { in_vm = 0 }
         in_vm && /<requested/ {
@@ -122,23 +124,55 @@ read_live_req() {
                 print substr($0, RSTART, RLENGTH)
             exit
         }
-    ' <<<"$xml"
+    ' <<<"$xml")
+    [[ "$val" =~ ^[0-9]+$ ]] || return 1
+    echo "$val"
 }
 
-req_initial=$(read_live_req || true)
-req="${req_initial:-0}"
-[[ "$req" =~ ^[0-9]+$ ]] || req=0
+# ---------- initial req ----------
+# If the VM is up, read the live <requested>. Otherwise 0 — a shut-off guest's
+# virtio-mem device resets to whatever the stored XML says, which for this
+# tool's recommended XML is <requested>0</requested>.
+req=0
+initial_state=$(virsh domstate "$DOMAIN" 2>/dev/null || echo missing)
+if [[ "$initial_state" == "running" ]]; then
+    if initial_req=$(read_live_req); then
+        req="$initial_req"
+    else
+        echo "$(date '+%T') $DOMAIN: WARNING: could not read <requested> from live XML; starting from 0 — first shrink tick may be a no-op"
+    fi
+elif [[ "$initial_state" == "missing" ]]; then
+    echo "$(date '+%T') $DOMAIN: WARNING: domain not defined yet; will wait"
+fi
 
 echo "$(date '+%T') $DOMAIN: starting (req=${req}KiB step=${STEP_KIB}KiB max=${MAX_KIB}KiB interval=${INTERVAL}s low=${LOW_PCT}% high=${HIGH_PCT}%)"
 
 # ---------- main loop ----------
+prev_state="$initial_state"
+
 while true; do
     state=$(virsh domstate "$DOMAIN" 2>/dev/null || echo missing)
+
     if [[ "$state" != "running" ]]; then
-        # VM is down; don't touch req — it'll be re-read from XML on next start
+        # --live changes don't persist across VM restarts, so tracked `req`
+        # becomes stale once the VM is down. Reset to match cold-boot state.
+        req=0
+        prev_state="$state"
         sleep "$INTERVAL" & wait $! 2>/dev/null || true
         continue
     fi
+
+    # On transition from non-running -> running, resync from the live XML in
+    # case something else set --requested-size between ticks.
+    if [[ "$prev_state" != "running" ]]; then
+        if synced=$(read_live_req); then
+            if (( synced != req )); then
+                echo "$(date '+%T') $DOMAIN: resynced req from XML after VM start: ${req}KiB -> ${synced}KiB"
+            fi
+            req="$synced"
+        fi
+    fi
+    prev_state="$state"
 
     # Ensure balloon stats are populating (idempotent; surfaces libvirt errors).
     if ! err=$(virsh dommemstat "$DOMAIN" --period 2 --live 2>&1 >/dev/null); then
