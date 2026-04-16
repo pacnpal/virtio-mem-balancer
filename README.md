@@ -89,7 +89,6 @@ Minimal systemd unit (`/etc/systemd/system/virtio-mem-balancer@.service`):
 [Unit]
 Description=virtio-mem balancer for %i
 After=libvirtd.service
-PartOf=libvirtd.service
 
 [Service]
 Type=simple
@@ -97,6 +96,8 @@ Environment=DOMAIN=%i
 ExecStart=/usr/local/sbin/virtio-mem-balancer
 Restart=on-failure
 RestartSec=5s
+TimeoutStopSec=20s
+KillMode=mixed
 
 [Install]
 WantedBy=multi-user.target
@@ -111,23 +112,37 @@ journalctl -fu virtio-mem-balancer@my-guest.service
 
 ## Install (Unraid)
 
-Unraid's root filesystem is tmpfs, so the script must live on `/boot` and be
-launched at array start via the User Scripts plugin.
+Prerequisite: the [User Scripts](https://forums.unraid.net/topic/48286-plugin-ca-user-scripts/) plugin (install from Community Applications).
+
+On the Unraid host:
 
 ```bash
-# On the Unraid host:
-mkdir -p /boot/config/plugins/user.scripts/scripts/virtio-mem-balancer
-cp balancer.sh /boot/config/plugins/user.scripts/scripts/virtio-mem-balancer/script
-chmod +x /boot/config/plugins/user.scripts/scripts/virtio-mem-balancer/script
-echo "virtio-mem balancer" > /boot/config/plugins/user.scripts/scripts/virtio-mem-balancer/name
+cd /boot && git clone https://github.com/pacnpal/virtio-mem-balancer.git
+cd virtio-mem-balancer
+./unraid/install.sh my-guest         # replace with your VM's libvirt domain name
 ```
 
-Edit the script to set `DOMAIN` at the top (since `/etc` isn't persistent,
-sourcing a config file on boot is harder — easiest to bake values in). Then
-in Unraid UI: **Settings → User Scripts → virtio-mem balancer → "At First
-Array Start Only"**.
+The installer creates a dedicated User Scripts entry at
+`/boot/config/plugins/user.scripts/scripts/virtio-mem-balancer-my-guest/`
+containing:
+- `balancer.sh` — copy of the upstream script
+- `balancer.conf` — per-domain tunables (edit here, not in the script)
+- `script` — the User Scripts entry point, which points at the two above
+- `name`, `description` — shown in the User Scripts UI
 
-Log tails to `/tmp/user.scripts/tmpScripts/virtio-mem-balancer/log.txt`.
+Then in the Unraid web UI: **Settings → User Scripts → virtio-mem balancer
+(my-guest)**, set the schedule to **"At First Array Start Only"**, and click
+**Apply**. To start immediately without waiting for an array restart, click
+**"Run Script"** once.
+
+Log tails to `/tmp/user.scripts/tmpScripts/virtio-mem-balancer-my-guest/log.txt`
+(tmpfs — wiped on Unraid reboot).
+
+For multiple guests, run the installer once per domain; each gets its own
+User Scripts entry and lockfile.
+
+**Updating later:** `cd /boot/virtio-mem-balancer && git pull && ./unraid/install.sh my-guest`
+refreshes `balancer.sh` without touching your `balancer.conf`.
 
 ## Config
 
@@ -158,9 +173,9 @@ Precedence: env var > `/etc/virtio-mem-balancer/<domain>.conf` >
 Manual smoke test (on the host):
 
 ```bash
-virsh update-memory-device <domain> --node 0 --requested-size 1G --live
+virsh update-memory-device <domain> --node 0 --requested-size 1048576KiB --live
 # in the guest: free -h  should show +1 GiB
-virsh update-memory-device <domain> --node 0 --requested-size 0  --live
+virsh update-memory-device <domain> --node 0 --requested-size 0KiB --live
 ```
 
 Stress test (in the guest, with `stress-ng` installed):
@@ -169,8 +184,18 @@ Stress test (in the guest, with `stress-ng` installed):
 stress-ng --vm 2 --vm-bytes 2G --vm-keep --timeout 45s
 ```
 
-Watch the balancer log — you should see `unused=N% req XKiB -> YKiB` grow
-lines within 1–2 ticks, then shrink lines ~20s after stress ends.
+### Example log output
+
+```
+13:23:41 my-guest: starting (req=0KiB step=524288KiB max=6291456KiB interval=15s low=15% high=40%)
+13:23:56 my-guest no stats (avail= unused=)
+13:24:26 my-guest unused=7% req 0KiB -> 524288KiB
+13:24:41 my-guest unused=4% req 524288KiB -> 1048576KiB
+13:25:26 my-guest unused=48% req 1048576KiB -> 524288KiB
+13:25:41 my-guest unused=61% req 524288KiB -> 0KiB
+```
+
+(In-band ticks don't log. Only grows, shrinks, and errors appear.)
 
 ## Troubleshooting
 
