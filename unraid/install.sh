@@ -95,9 +95,27 @@ Config: $CONFIG_PATH
 Log (tmpfs): /tmp/user.scripts/tmpScripts/virtio-mem-balancer-$DOMAIN/log.txt
 EOF
 
+# Verify all four files User Scripts expects are present and non-empty.
+missing=()
+for f in script name description balancer.sh balancer.conf; do
+    if [[ ! -s "$TARGET_DIR/$f" ]]; then
+        missing+=("$f")
+    fi
+done
+if (( ${#missing[@]} > 0 )); then
+    echo "ERROR: the following files were not created (or are empty): ${missing[*]}" >&2
+    echo "       Target: $TARGET_DIR" >&2
+    exit 1
+fi
+
 cat <<EOF
 
 Installed at: $TARGET_DIR
+  script          $(stat -c '%A %s bytes' "$TARGET_DIR/script")
+  name            $(stat -c '%A %s bytes' "$TARGET_DIR/name")       -> $(cat "$TARGET_DIR/name")
+  description     $(stat -c '%A %s bytes' "$TARGET_DIR/description")
+  balancer.sh     $(stat -c '%A %s bytes' "$TARGET_DIR/balancer.sh")
+  balancer.conf   $(stat -c '%A %s bytes' "$TARGET_DIR/balancer.conf")
 
 Next steps:
   1. In Unraid web UI: Settings -> User Scripts
